@@ -1,0 +1,13 @@
+{
+    "compilerOptions": {
+        "target": "ES5",
+        "module": "CommonJS",
+        "declaration": true,
+        "outDir": "./lib",
+        "strict": true,
+        "esModuleInterop": true,
+        "resolveJsonModule": true,
+    },
+    "include": ["src", "src/utils"],
+    "exclude": ["node_modules","**/__test__/*","src/utils"]
+}
