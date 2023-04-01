@@ -2,49 +2,47 @@ import { getContract } from "./backend";
 import fs from "fs";
 import { ThirdwebStorage } from "@thirdweb-dev/storage";
 import CryptoJS from "crypto-js";
-import { ethers } from "ethers";
 
 type Db = {
   name: string | null;
   owner: string | null;
-};
-type state = {
-  hasSetup: boolean;
+  projectId: string | null
 };
 
+
 export default class DB {
-  private Db: Db = { name: null, owner: null };
-  private states: state = { hasSetup: false };
-  constructor(address: string, name: string) {
+  private Db: Db = { name: null, owner: null, projectId: null };
+  constructor({ address, name, projectId }: { address: string, name: string, projectId: string }) {
     try {
       this.Db.name = name;
       this.Db.owner = address;
-      this.init();
+      this.Db.projectId = projectId;
+      this.setUpDb()
     } catch (error) {
       console.clear();
     }
   }
 
   private async setUpDb() {
-    this.states.hasSetup = false;
-    const contract = await getContract();
     try {
+      const contract = await getContract();
+      const database = await contract.getDatabase();
+      // console.log(database.toString())
       fs.readdir("./rdata", async (err, files) => {
-        const database = await contract.getDatabase();
         if (err?.message.includes("no such file or directory")) {
           if (database.toString().trim().length !== 0) {
             const res = await fetch(database.toString());
             const data = await res.json();
             fs.mkdirSync("./rdata");
-            fs.writeFileSync("./rdata/db", JSON.stringify(data), "utf8");
+            fs.writeFileSync("./rdata/db", encrypt(JSON.stringify(data), this.Db.projectId!), "utf8");
             fs.writeFileSync(
               "./rdata/!",
-              encrypt(database, "projectID"),
+              encrypt(database, this.Db.projectId!),
               "utf8"
             );
           } else {
             fs.mkdirSync("./rdata");
-            fs.writeFileSync("./rdata/db", JSON.stringify({}), "utf8");
+            fs.writeFileSync("./rdata/db", "", "utf8");
             fs.writeFileSync("./rdata/!", "", "utf8");
           }
         } else if (files) {
@@ -55,121 +53,301 @@ export default class DB {
             datas.map((item) => {
               const value: any =
                 item === "db"
-                  ? JSON.stringify(data)
-                  : encrypt(database, "projectID");
+                  ? encrypt(JSON.stringify(data), this.Db.projectId!)
+                  : encrypt(database, this.Db.projectId!);
               if (!files.includes(item)) {
-                 fs.writeFileSync(`./rdata/${item}`, value, "utf8");
+                fs.writeFileSync(`./rdata/${item}`, value, "utf8");
               }
             });
           } else {
             datas.map((item) => {
-              const value: any = item === "db" ? JSON.stringify({}) : "";
+              const value: any = item === "db" ? "" : "";
               if (!files.includes(item)) {
                 fs.writeFileSync(`./rdata/${item}`, value, "utf8");
               }
             });
           }
-          // this.syncDataWithContract();
+          await this.uploadData()
         }
       });
-      this.states.hasSetup = true;
+      setTimeout(() => {
+        this.setUpDb()
+      }, 5000);
     } catch (error) {
-      console.clear();
+      setTimeout(() => {
+        this.setUpDb()
+      }, 2000);
     }
   }
 
   collection(name: string) {
-    if (this.states.hasSetup) {
-      return new Collection(name);
-    }
+    return new Collection(name, this.Db.projectId);
   }
-
   private async uploadData() {
-    await this.setUpDb();
     const storage = new ThirdwebStorage();
     try {
-        const file = fs.readFileSync("./rdata/db", "utf8");
-        const contract = await getContract();
-        if (file) {
-          const data = JSON.parse(file);
-          const uploaded = await storage.upload(data, {
-            alwaysUpload: true,
-            uploadWithGatewayUrl: true,
-            uploadWithoutDirectory: true,
+      const file = fs.readFileSync("./rdata/db", "utf8");
+      const contract = await getContract();
+      if (file) {
+        const data = JSON.parse(decrypt(file, this.Db.projectId!));
+        const uploaded = await storage.upload(JSON.stringify(data), {
+          alwaysUpload: true,
+          uploadWithGatewayUrl: true,
+          uploadWithoutDirectory: true,
+        });
+        const url = encrypt(uploaded, this.Db.projectId!);
+        fs.writeFileSync("./rdata/!", url, "utf8");
+        const database = await contract.getDatabase();
+        if (database.toString() !== uploaded) {
+          const tx = await contract.updateDatabase(uploaded, {
+            gasLimit: 1000000,
           });
-          const url = encrypt(uploaded, "projectID");
-          fs.writeFileSync("./rdata/!", url, "utf8");
-          const database = await contract.getDatabase();
-          if (database.toString() !== uploaded) {
-            const tx = await contract.updateDatabase(uploaded, {
-              gasLimit: 1000000,
-            });
-            const { gasUsed, effectiveGasPrice } = await tx.wait(1);
-            const gasCost = ethers.utils.formatEther(
-              gasUsed.mul(effectiveGasPrice)
-            );
+          const receipt = await tx.wait(1);
+          if (receipt) {
+            // const gasCost = ethers.utils.formatEther(
+            //   gasUsed.mul(effectiveGasPrice)
+            // );
             console.log("database updated");
           }
         }
-      
-      setTimeout(() => {
-        this.uploadData();
-      }, 5000);
+      }
+
     } catch (error) {
-      console.clear();
-      setTimeout(() => {
-        this.uploadData();
-      }, 5000);
     }
   }
 
-  async init() {
-    await new Promise<void>((resove, reject) => {
-      try {
-        this.setUpDb();
-        resove();
-      } catch (error) {
-        reject();
-      }
-    }).then(() => this.uploadData());
-  }
+}
+
+type collection = {
+  name: string | undefined;
+  encryptionKey: string | null
 }
 
 class Collection {
-  private name!: string;
-  constructor(name: string) {
-    this.name = name;
+  private collection: collection = {
+    encryptionKey: null,
+    name: undefined
+  };
+  constructor(name: string, encryptionKey: string | null) {
+    this.collection.name = name
+    this.collection.encryptionKey = encryptionKey
   }
 
-  add(doc: any) {
+  add(doc: Object) {
     try {
       const file = fs.readFileSync("./rdata/db", "utf8");
-      const data = JSON.parse(file);
-      if (data) {
+      if (file.trim().length !== 0) {
+        const data = JSON.parse(decrypt(file, this.collection.encryptionKey!));
         const id = Math.random() * 1e18;
         const idString = id.toString().slice(0, 16);
         const updatedData = {
           ...data,
-          [this.name]: {
-            ...data[this.name]!,
+          [this.collection.name!]: {
+            ...data[this.collection.name!]!,
             [idString]: { _id: idString, ...doc },
           },
         };
-        fs.writeFileSync("./rdata/db", JSON.stringify(updatedData), "utf8");
-      } else {
+        const encrypted = encrypt(JSON.stringify(updatedData), this.collection.encryptionKey!)
+        fs.writeFileSync("./rdata/db", encrypted, "utf8");
+      }
+      else {
         const id = Math.random() * 1e18;
         const idString = id.toString().slice(0, 16);
         const updatedData = {
-          [this.name]: {
+          [this.collection.name!]: {
             [idString]: { _id: idString, ...doc },
           },
         };
-        fs.writeFileSync("./rdata/db", JSON.stringify(updatedData), "utf8");
+        const encrypted = encrypt(JSON.stringify(updatedData), this.collection.encryptionKey!)
+        fs.writeFileSync("./rdata/db", encrypted, "utf8");
       }
-    } catch (error) {
-      console.clear();
+
+    } catch (error: any) {
+      throw new Error(error.message)
     }
   }
+
+  update(filter: Object, update: Object) {
+    try {
+      const file = fs.readFileSync("./rdata/db", "utf8");
+      if (Object.keys(filter).length === 0 || Object.keys(update).length === 0) {
+        if (Object.keys(filter).length === 0) {
+          throw new Error("filter is required")
+        }
+        else {
+          throw new Error("update is required")
+        }
+      }
+      else {
+        if (file.trim().length !== 0) {
+          const data = JSON.parse(decrypt(file, this.collection.encryptionKey!));
+          if (data[this.collection.name!]) {
+            const collection = Object.values(data[this.collection.name!])
+            const keys = Object.keys(filter);
+            const values = Object.values(filter)
+            const filtered: any[] = collection.filter((item: any) => {
+              if (item[keys[0]] && item[keys[1]] && values[1]) {
+                return (item[keys[0]] === values[0] && item[keys[1]] === values[1])
+              }
+              else if (item[keys[0]] && item[keys[1]] && item[keys[2]] && values[2]) {
+                return (item[keys[0]] === values[0] && item[keys[1]] === values[1] && item[keys[2]] === values[2])
+              }
+              else {
+                return item[keys[0]] === values[0]
+              }
+            })
+            if (filtered.length > 1) {
+              throw new Error("Cannot Update! Found more than one document with same details")
+            }
+            else if (filtered.length === 1) {
+              const id = filtered[0]._id;
+              const updatedData = {
+                ...data,
+                [this.collection.name!]: {
+                  ...data[this.collection.name!]!,
+                  [id]: { _id: id, ...filtered[0], ...update }
+                },
+              };
+              const encrypted = encrypt(JSON.stringify(updatedData), this.collection.encryptionKey!)
+              fs.writeFileSync("./rdata/db", encrypted, "utf8");
+              return updatedData[this.collection.name!][id];
+            }
+            else {
+              throw new Error("Document Not Found!!")
+            }
+          }
+          else {
+            throw new Error("Collection Not Found!!")
+          }
+
+        }
+      }
+
+    } catch (error: any) {
+      throw new Error(error.message)
+    }
+  }
+
+
+  get(filter: Object) {
+    try {
+      const file = fs.readFileSync("./rdata/db", "utf8");
+      if (Object.keys(filter).length === 0) {
+        throw new Error("filter is required")
+      }
+      else {
+        if (file.trim().length !== 0) {
+          const data = JSON.parse(decrypt(file, this.collection.encryptionKey!));
+          if (data[this.collection.name!]) {
+            const collection = Object.values(data[this.collection.name!])
+            const keys = Object.keys(filter);
+            const values = Object.values(filter)
+            const filtered: any[] = collection.filter((item: any) => {
+              if (item[keys[0]] && item[keys[1]] && values[1]) {
+                return (item[keys[0]] === values[0] && item[keys[1]] === values[1])
+              }
+              else if (item[keys[0]] && item[keys[1]] && item[keys[2]] && values[2]) {
+                return (item[keys[0]] === values[0] && item[keys[1]] === values[1] && item[keys[2]] === values[2])
+              }
+              else {
+                return item[keys[0]] === values[0]
+              }
+            })
+            if (filtered.length === 1) {
+              return filtered[0]
+            }
+            else if (filtered.length > 1) {
+              return filtered
+            }
+            else {
+              throw new Error("Document Not Found!!")
+            }
+          }
+          else {
+            throw new Error("Collection Not Found!!")
+          }
+
+        }
+      }
+
+    } catch (error: any) {
+      throw new Error(error.message)
+    }
+  }
+
+  deleteOne(filter: Object) {
+    try {
+      const file = fs.readFileSync("./rdata/db", "utf8");
+      if (Object.keys(filter).length === 0) {
+        throw new Error("filter is required")
+      }
+      else {
+        if (file.trim().length !== 0) {
+          const data = JSON.parse(decrypt(file, this.collection.encryptionKey!));
+          if (data[this.collection.name!]) {
+            const collection = Object.values(data[this.collection.name!])
+            const keys = Object.keys(filter);
+            const values = Object.values(filter)
+            const filtered: any[] = collection.filter((item: any) => {
+              if (item[keys[0]] && item[keys[1]] && values[1]) {
+                return (item[keys[0]] === values[0] && item[keys[1]] === values[1])
+              }
+              else if (item[keys[0]] && item[keys[1]] && item[keys[2]] && values[2]) {
+                return (item[keys[0]] === values[0] && item[keys[1]] === values[1] && item[keys[2]] === values[2])
+              }
+              else {
+                return item[keys[0]] === values[0]
+              }
+            })
+            if (filtered.length > 1) {
+              throw new Error("Cannot Delete! Found more than one document with same details")
+            }
+            if (filtered.length === 1) {
+              const id = filtered[0]._id;
+              let updatedData = data;
+              delete updatedData[this.collection.name!][id]
+              const encrypted = encrypt(JSON.stringify(updatedData), this.collection.encryptionKey!)
+              fs.writeFileSync("./rdata/db", encrypted, "utf8")
+              return id
+            } else {
+              throw new Error("Document Not Found!!")
+            }
+          }
+          else {
+            throw new Error("Collection Not Found!!")
+          }
+
+        }
+      }
+    } catch (error: any) {
+      throw new Error(error.message)
+    }
+  }
+
+
+  deleteAll() {
+    try {
+      const file = fs.readFileSync("./rdata/db", "utf8");
+      if (file.trim().length !== 0) {
+        const data = JSON.parse(decrypt(file, this.collection.encryptionKey!));
+        let updatedData = data;
+        if (data[this.collection.name!]) {
+          delete updatedData[this.collection.name!];
+          const encrypted = encrypt(JSON.stringify(updatedData), this.collection.encryptionKey!)
+          fs.writeFileSync("./rdata/db", encrypted, "utf8")
+          return true
+        }
+        else {
+          throw new Error("Collection Not Found!!")
+        }
+      }
+    } catch (error: any) {
+      throw new Error(error.message)
+    }
+  }
+
+
+
 }
 
 
