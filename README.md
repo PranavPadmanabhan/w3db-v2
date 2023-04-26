@@ -77,7 +77,6 @@ install this package in your project directory
 
    
    ```
-https://w3db-v2-frontend.vercel.app/
 
 ## UPDATING A PARTICULAR DOCUMENT 
 
