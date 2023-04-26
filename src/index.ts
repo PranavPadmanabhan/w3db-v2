@@ -1,3 +1,3 @@
-import DB from "./utils/Db";
+import W3dbV2 from "./utils/Db";
 
-export { DB };
+export { W3dbV2 };

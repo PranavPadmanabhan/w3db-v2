@@ -4,19 +4,21 @@ import { ThirdwebStorage } from "@thirdweb-dev/storage";
 import CryptoJS from "crypto-js";
 
 type Db = {
-  name: string | null;
+  secret: string | null;
   owner: string | null;
-  projectId: string | null
+  projectId: string | null;
+  mumbaiRPC: string | null;
 };
 
 
-export default class DB {
-  private Db: Db = { name: null, owner: null, projectId: null };
-  constructor({ address, name, projectId }: { address: string, name: string, projectId: string }) {
+export default class W3dbV2 {
+  private Db: Db = { secret: null, owner: null, projectId: null, mumbaiRPC: null };
+  constructor({ address, secret, mumbaiRPC, projectId }: { address: string, secret: string, mumbaiRPC: string, projectId: string }) {
     try {
-      this.Db.name = name;
+      this.Db.secret = secret;
       this.Db.owner = address;
       this.Db.projectId = projectId;
+      this.Db.mumbaiRPC = mumbaiRPC;
       this.setUpDb()
     } catch (error) {
       console.clear();
@@ -25,9 +27,8 @@ export default class DB {
 
   private async setUpDb() {
     try {
-      const contract = await getContract();
+      const contract = await getContract(this.Db.secret!, this.Db.projectId!, this.Db.mumbaiRPC!);
       const database = await contract.getDatabase();
-      // console.log(database.toString())
       fs.readdir("./rdata", async (err, files) => {
         if (err?.message.includes("no such file or directory")) {
           if (database.toString().trim().length !== 0) {
@@ -73,10 +74,25 @@ export default class DB {
       setTimeout(() => {
         this.setUpDb()
       }, 5000);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message.includes('could not detect network')) {
+        console.log(error)
+      }
       setTimeout(() => {
         this.setUpDb()
       }, 2000);
+    }
+  }
+
+    async getIPFS(gateWayNeeded: boolean = false) {
+    const contract = await getContract(this.Db.secret!, this.Db.projectId!, this.Db.mumbaiRPC!);
+    const database = await contract.getDatabase()
+    if(gateWayNeeded){
+      return database.toString()
+    }
+    else {
+      const hash = database.toString().slice(database.toString().length - 46,database.toString().length);
+      return hash
     }
   }
 
@@ -87,7 +103,7 @@ export default class DB {
     const storage = new ThirdwebStorage();
     try {
       const file = fs.readFileSync("./rdata/db", "utf8");
-      const contract = await getContract();
+      const contract = await getContract(this.Db.secret!, this.Db.projectId!, this.Db.mumbaiRPC!);
       if (file) {
         const data = JSON.parse(decrypt(file, this.Db.projectId!));
         const uploaded = await storage.upload(JSON.stringify(data), {
@@ -103,12 +119,6 @@ export default class DB {
             gasLimit: 1000000,
           });
           const receipt = await tx.wait(1);
-          if (receipt) {
-            // const gasCost = ethers.utils.formatEther(
-            //   gasUsed.mul(effectiveGasPrice)
-            // );
-            console.log("database updated");
-          }
         }
       }
 
@@ -128,10 +138,13 @@ class Collection {
     encryptionKey: null,
     name: undefined
   };
+
+
   constructor(name: string, encryptionKey: string | null) {
     this.collection.name = name
     this.collection.encryptionKey = encryptionKey
   }
+
 
   add(doc: Object) {
     try {
@@ -140,26 +153,30 @@ class Collection {
         const data = JSON.parse(decrypt(file, this.collection.encryptionKey!));
         const id = Math.random() * 1e18;
         const idString = id.toString().slice(0, 16);
+        const document = { _id: idString, ...doc }
         const updatedData = {
           ...data,
           [this.collection.name!]: {
             ...data[this.collection.name!]!,
-            [idString]: { _id: idString, ...doc },
+            [idString]: document,
           },
         };
         const encrypted = encrypt(JSON.stringify(updatedData), this.collection.encryptionKey!)
         fs.writeFileSync("./rdata/db", encrypted, "utf8");
+        return document
       }
       else {
         const id = Math.random() * 1e18;
         const idString = id.toString().slice(0, 16);
+        const document = { _id: idString, ...doc }
         const updatedData = {
           [this.collection.name!]: {
-            [idString]: { _id: idString, ...doc },
+            [idString]: document,
           },
         };
         const encrypted = encrypt(JSON.stringify(updatedData), this.collection.encryptionKey!)
         fs.writeFileSync("./rdata/db", encrypted, "utf8");
+        return document
       }
 
     } catch (error: any) {
@@ -233,7 +250,17 @@ class Collection {
     try {
       const file = fs.readFileSync("./rdata/db", "utf8");
       if (Object.keys(filter).length === 0) {
-        throw new Error("filter is required")
+        if (file.trim().length !== 0) {
+          const data = JSON.parse(decrypt(file, this.collection.encryptionKey!));
+          if (data[this.collection.name!]) {
+            const collection = Object.values(data[this.collection.name!])
+            return collection
+          }
+          else {
+            throw new Error("Collection Not Found!!")
+          }
+
+        }
       }
       else {
         if (file.trim().length !== 0) {
@@ -345,7 +372,6 @@ class Collection {
       throw new Error(error.message)
     }
   }
-
 
 
 }
