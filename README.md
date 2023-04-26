@@ -1,4 +1,4 @@
-# W3DB - DECENTRALIZED DATABASE
+# W3DB-V2 - DECENTRALIZED DATABASE
 
 W3DB-V2 is a decentralised database uses IPFS for managing data 
 
