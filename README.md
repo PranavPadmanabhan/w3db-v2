@@ -27,10 +27,10 @@ install this package in your project directory
 ```   
 
 
-## Creating W3DB Instance 
+## Creating W3DB-V2 Instance 
 
    ``` javascript
-       const { W3DBV2 } = require("w3db-v2")
+       const { W3dbV2 } = require("w3db-v2")
 
        const config = {
           address : // Your Wallet address
@@ -39,7 +39,7 @@ install this package in your project directory
           mumbaiRPC     : // Your polygon mumbai rpc url
        }
 
-       const db = new W3DB(config);
+       const db = new W3dbV2(config);
 
         
    ```
@@ -49,11 +49,11 @@ install this package in your project directory
    ``` javascript
    // adding new collection
    
-   const userCollection = db.Collection("Users");
+   const userCollection = db.collection("Users");
 
    //
 
-  const doc = userCollection.add({ _id: "1233434854323485",firstName: "JOHN", lastName: "DOE" });
+  const doc = userCollection.add({ id: "1233434854323485",firstName: "JOHN", lastName: "DOE" });
 
 
    ```
@@ -73,7 +73,7 @@ install this package in your project directory
 
    ``` javascript
 
-     const docs =  userCollection.get({ _id: "1233434854323485" });
+     const docs =  userCollection.get({ id: "1233434854323485" });
 
    
    ```
@@ -82,7 +82,7 @@ install this package in your project directory
 
    ``` javascript
 
-    const isSuccess =  userCollection.update({ _id: "1233434854323485" },{ lastName: "WICK" });
+    const isSuccess =  userCollection.update({ id: "1233434854323485" },{ lastName: "WICK" });
 
    
    ```
@@ -92,7 +92,7 @@ install this package in your project directory
 
    ``` javascript
 
-    const deletedId =  userCollection.deleteOne({ _id: "1233434854323485" });
+    const deletedId =  userCollection.deleteOne({ id: "1233434854323485" });
 
    
    ```
