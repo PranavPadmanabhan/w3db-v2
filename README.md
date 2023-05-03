@@ -75,6 +75,9 @@ install this package in your project directory
 
      const docs =  userCollection.get({ id: "1233434854323485" });
 
+      // will fetch list in which the "0x92810381801080313" will be in the 'likes' array
+     const docs =  userCollection.get({ $includes: { likes : "0x92810381801080313" }});
+
    
    ```
 

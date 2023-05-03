@@ -84,14 +84,14 @@ export default class W3dbV2 {
     }
   }
 
-    async getIPFS(gateWayNeeded: boolean = false) {
+  async getIPFS(gateWayNeeded: boolean = false) {
     const contract = await getContract(this.Db.secret!, this.Db.projectId!, this.Db.mumbaiRPC!);
     const database = await contract.getDatabase()
-    if(gateWayNeeded){
+    if (gateWayNeeded) {
       return database.toString()
     }
     else {
-      const hash = database.toString().slice(database.toString().length - 46,database.toString().length);
+      const hash = database.toString().slice(database.toString().length - 46, database.toString().length);
       return hash
     }
   }
@@ -131,6 +131,13 @@ export default class W3dbV2 {
 type collection = {
   name: string | undefined;
   encryptionKey: string | null
+}
+
+type Document = {
+  [key: string]: any,
+  $includes?: {
+    [key: string]: any
+  }
 }
 
 class Collection {
@@ -246,7 +253,8 @@ class Collection {
   }
 
 
-  get(filter: Object) {
+
+  get(filter: Document) {
     try {
       const file = fs.readFileSync("./rdata/db", "utf8");
       if (Object.keys(filter).length === 0) {
@@ -267,27 +275,42 @@ class Collection {
           const data = JSON.parse(decrypt(file, this.collection.encryptionKey!));
           if (data[this.collection.name!]) {
             const collection = Object.values(data[this.collection.name!])
-            const keys = Object.keys(filter);
-            const values = Object.values(filter)
-            const filtered: any[] = collection.filter((item: any) => {
-              if (item[keys[0]] && item[keys[1]] && values[1]) {
-                return (item[keys[0]] === values[0] && item[keys[1]] === values[1])
-              }
-              else if (item[keys[0]] && item[keys[1]] && item[keys[2]] && values[2]) {
-                return (item[keys[0]] === values[0] && item[keys[1]] === values[1] && item[keys[2]] === values[2])
-              }
-              else {
-                return item[keys[0]] === values[0]
-              }
-            })
-            if (filtered.length === 1) {
-              return filtered[0]
-            }
-            else if (filtered.length > 1) {
-              return filtered
+            if (filter.$includes && Object.values(filter.$includes!)[0]) {
+              const filteredData = collection.filter((item:any) => {
+                if(
+                  !item[Object.keys(filter.$includes!)[0]] 
+                ){
+                  throw new Error(Object.keys(filter.$includes!)[0]+" is not a property")
+                }
+                else {
+                  return item[Object.keys(filter.$includes!)[0]].includes(Object.values(filter.$includes!)[0])
+                }
+              } )
+              return filteredData
             }
             else {
-              throw new Error("Document Not Found!!")
+              const keys = Object.keys(filter);
+              const values = Object.values(filter)
+              const filtered: any[] = collection.filter((item: any) => {
+                if (item[keys[0]] && item[keys[1]] && values[1]) {
+                  return (item[keys[0]] === values[0] && item[keys[1]] === values[1])
+                }
+                else if (item[keys[0]] && item[keys[1]] && item[keys[2]] && values[2]) {
+                  return (item[keys[0]] === values[0] && item[keys[1]] === values[1] && item[keys[2]] === values[2])
+                }
+                else {
+                  return item[keys[0]] === values[0]
+                }
+              })
+              if (filtered.length === 1) {
+                return filtered[0]
+              }
+              else if (filtered.length > 1) {
+                return filtered
+              }
+              else {
+                throw new Error("Document Not Found!!")
+              }
             }
           }
           else {
