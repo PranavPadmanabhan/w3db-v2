@@ -21,7 +21,6 @@ export default class W3dbV2 {
       this.Db.mumbaiRPC = mumbaiRPC;
       this.setUpDb()
     } catch (error) {
-      console.clear();
     }
   }
 
@@ -29,11 +28,11 @@ export default class W3dbV2 {
     try {
       const contract = await getContract(this.Db.secret!, this.Db.projectId!, this.Db.mumbaiRPC!);
       const database = await contract.getDatabase();
+      const storage = new ThirdwebStorage()
       fs.readdir("./rdata", async (err, files) => {
         if (err?.message.includes("no such file or directory")) {
           if (database.toString().trim().length !== 0) {
-            const res = await fetch(database.toString());
-            const data = await res.json();
+            const data = await storage.downloadJSON(database.toString());
             fs.mkdirSync("./rdata");
             fs.writeFileSync("./rdata/db", encrypt(JSON.stringify(data), this.Db.projectId!), "utf8");
             fs.writeFileSync(
@@ -49,8 +48,7 @@ export default class W3dbV2 {
         } else if (files) {
           let datas: any[] = ["db", "!"];
           if (database.toString().trim().length !== 0) {
-            const res = await fetch(database.toString());
-            const data = await res.json();
+            const data = await storage.downloadJSON(database.toString());
             datas.map((item) => {
               const value: any =
                 item === "db"
@@ -97,7 +95,7 @@ export default class W3dbV2 {
   }
 
   collection(name: string) {
-    return new Collection(name, this.Db.projectId);
+    return new Collection(name, this.Db.projectId,this.setUpDb);
   }
   private async uploadData() {
     const storage = new ThirdwebStorage();
@@ -130,7 +128,8 @@ export default class W3dbV2 {
 
 type collection = {
   name: string | undefined;
-  encryptionKey: string | null
+  encryptionKey: string | null;
+  setUpDb:any;
 }
 
 type Document = {
@@ -143,18 +142,21 @@ type Document = {
 class Collection {
   private collection: collection = {
     encryptionKey: null,
-    name: undefined
+    name: undefined,
+    setUpDb:null
   };
 
 
-  constructor(name: string, encryptionKey: string | null) {
+  constructor(name: string, encryptionKey: string | null,setUpDb:any) {
     this.collection.name = name
     this.collection.encryptionKey = encryptionKey
+    this.collection.setUpDb = setUpDb
   }
 
 
   add(doc: Object) {
     try {
+      this.collection.setUpDb()
       const file = fs.readFileSync("./rdata/db", "utf8");
       if (file.trim().length !== 0) {
         const data = JSON.parse(decrypt(file, this.collection.encryptionKey!));
@@ -193,6 +195,7 @@ class Collection {
 
   update(filter: Object, update: Object) {
     try {
+      this.collection.setUpDb()
       const file = fs.readFileSync("./rdata/db", "utf8");
       if (Object.keys(filter).length === 0 || Object.keys(update).length === 0) {
         if (Object.keys(filter).length === 0) {
@@ -256,6 +259,7 @@ class Collection {
 
   get(filter: Document) {
     try {
+      this.collection.setUpDb()
       const file = fs.readFileSync("./rdata/db", "utf8");
       if (Object.keys(filter).length === 0) {
         if (file.trim().length !== 0) {
@@ -265,7 +269,7 @@ class Collection {
             return collection
           }
           else {
-            throw new Error("Collection Not Found!!")
+            return null
           }
 
         }
@@ -309,12 +313,12 @@ class Collection {
                 return filtered
               }
               else {
-                throw new Error("Document Not Found!!")
+                return null
               }
             }
           }
           else {
-            throw new Error("Collection Not Found!!")
+            return null
           }
 
         }
@@ -327,6 +331,7 @@ class Collection {
 
   deleteOne(filter: Object) {
     try {
+      this.collection.setUpDb()
       const file = fs.readFileSync("./rdata/db", "utf8");
       if (Object.keys(filter).length === 0) {
         throw new Error("filter is required")
@@ -377,6 +382,7 @@ class Collection {
 
   deleteAll() {
     try {
+      this.collection.setUpDb()
       const file = fs.readFileSync("./rdata/db", "utf8");
       if (file.trim().length !== 0) {
         const data = JSON.parse(decrypt(file, this.collection.encryptionKey!));
@@ -410,3 +416,5 @@ export function decrypt(encrypted: string | any, key: string) {
   const decrypted = bytes.toString(CryptoJS.enc.Utf8);
   return decrypted;
 }
+
+
