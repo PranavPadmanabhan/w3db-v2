@@ -117,6 +117,9 @@ export default class W3dbV2 {
             gasLimit: 1000000,
           });
           const receipt = await tx.wait(1);
+          if(receipt){
+            console.log("database updated")
+          }
         }
       }
 
